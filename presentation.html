@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS 3-Tier Web App — Terraform</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --accent: #4f8ef7;
+    --accent2: #7c5cfc;
+    --green: #2ecc71;
+    --orange: #f39c12;
+    --red: #e74c3c;
+    --text: #e8eaf0;
+    --muted: #8890a8;
+    --aws-orange: #FF9900;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; }
+
+  .deck { width: 100%; height: 100vh; position: relative; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: none; flex-direction: column;
+    padding: 40px 56px;
+    animation: fadeIn 0.3s ease;
+  }
+  .slide.active { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* NAV */
+  .nav {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 16px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 40px; padding: 8px 20px; z-index: 100;
+  }
+  .nav button {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 18px; padding: 4px 8px; border-radius: 6px; transition: color 0.2s, background 0.2s;
+  }
+  .nav button:hover { color: var(--text); background: var(--border); }
+  .nav .counter { font-size: 13px; color: var(--muted); min-width: 52px; text-align: center; }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); cursor: pointer; transition: background 0.2s; }
+  .dot.active { background: var(--accent); }
+
+  /* SLIDE TYPES */
+  .slide-title { justify-content: center; align-items: center; text-align: center; }
+  .slide-title .badge {
+    background: var(--aws-orange); color: #000; font-size: 11px; font-weight: 700;
+    letter-spacing: 1px; padding: 4px 12px; border-radius: 20px; margin-bottom: 24px; display: inline-block;
+  }
+  .slide-title h1 { font-size: 48px; font-weight: 700; line-height: 1.15; margin-bottom: 16px; }
+  .slide-title h1 span { color: var(--aws-orange); }
+  .slide-title p { color: var(--muted); font-size: 17px; max-width: 560px; line-height: 1.6; }
+  .slide-title .meta { margin-top: 32px; display: flex; gap: 24px; justify-content: center; }
+  .slide-title .meta-item { text-align: center; }
+  .slide-title .meta-item .val { font-size: 26px; font-weight: 700; color: var(--accent); }
+  .slide-title .meta-item .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .slide-header { margin-bottom: 32px; flex-shrink: 0; }
+  .slide-header h2 { font-size: 28px; font-weight: 700; }
+  .slide-header h2 span { color: var(--accent); }
+  .slide-header p { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  .tag { display: inline-block; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
+
+  /* ARCH DIAGRAM */
+  .arch-wrap { flex: 1; display: flex; flex-direction: column; gap: 0; overflow: hidden; }
+  .tier {
+    flex: 1; border-radius: 10px; border: 1px solid var(--border);
+    display: flex; align-items: center; padding: 12px 20px; gap: 16px;
+    position: relative; margin-bottom: 8px;
+  }
+  .tier:last-child { margin-bottom: 0; }
+  .tier-label {
+    writing-mode: horizontal-tb; font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+    color: var(--muted); text-transform: uppercase; min-width: 80px; flex-shrink: 0;
+  }
+  .tier-boxes { display: flex; gap: 10px; flex: 1; align-items: center; flex-wrap: wrap; }
+  .box {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 14px; text-align: center; flex: 1; min-width: 90px;
+  }
+  .box .icon { font-size: 20px; margin-bottom: 4px; }
+  .box .name { font-size: 12px; font-weight: 600; }
+  .box .sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .tier.internet { background: rgba(79,142,247,0.04); border-color: rgba(79,142,247,0.3); }
+  .tier.public { background: rgba(46,204,113,0.04); border-color: rgba(46,204,113,0.3); }
+  .tier.app { background: rgba(124,92,252,0.04); border-color: rgba(124,92,252,0.3); }
+  .tier.db { background: rgba(231,76,60,0.04); border-color: rgba(231,76,60,0.3); }
+  .arrow { text-align: center; font-size: 16px; color: var(--muted); flex-shrink: 0; margin: -2px 0; }
+
+  /* TWO COL */
+  .two-col { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; overflow: hidden; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; overflow-y: auto; }
+  .panel h3 { font-size: 14px; font-weight: 700; margin-bottom: 14px; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+
+  /* CARDS */
+  .card-grid { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; overflow: hidden; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+  .card .card-icon { font-size: 28px; }
+  .card .card-title { font-size: 14px; font-weight: 700; }
+  .card .card-sub { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .card .card-detail { margin-top: auto; }
+  .pill { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .pill.green { background: rgba(46,204,113,0.15); color: var(--green); }
+  .pill.orange { background: rgba(243,156,18,0.15); color: var(--orange); }
+  .pill.blue { background: rgba(79,142,247,0.15); color: var(--accent); }
+  .pill.purple { background: rgba(124,92,252,0.15); color: var(--accent2); }
+  .pill.red { background: rgba(231,76,60,0.15); color: var(--red); }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 600; font-size: 11px; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 12px; border-bottom: 1px solid rgba(46,51,80,0.5); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .mono { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px; color: var(--accent); }
+
+  /* SG RULES */
+  .sg-rule { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(46,51,80,0.4); font-size: 13px; }
+  .sg-rule:last-child { border-bottom: none; }
+  .sg-port { font-family: monospace; background: var(--surface2); padding: 2px 8px; border-radius: 4px; font-size: 12px; color: var(--accent); min-width: 60px; text-align: center; }
+  .sg-arrow { color: var(--muted); }
+  .sg-from { color: var(--muted); font-size: 12px; }
+
+  /* OUTPUT BLOCK */
+  .output-grid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; overflow: hidden; }
+  .output-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .output-card h4 { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+  .output-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; border-bottom: 1px solid rgba(46,51,80,0.4); font-size: 12px; }
+  .output-row:last-child { border-bottom: none; }
+  .output-key { color: var(--muted); }
+  .output-val { font-family: monospace; color: var(--green); font-size: 11px; }
+
+  /* SLIDE 7 — security */
+  .sec-grid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; overflow: hidden; }
+  .sec-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .sec-panel h3 { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+  .sec-item { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; line-height: 1.5; }
+  .sec-item::before { content: "✓"; color: var(--green); flex-shrink: 0; font-weight: 700; }
+
+  /* SLIDE 9 — deploy */
+  .deploy-wrap { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; overflow: hidden; }
+  .step-list { display: flex; flex-direction: column; gap: 12px; }
+  .step { display: flex; gap: 14px; align-items: flex-start; }
+  .step-num { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step-body h4 { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+  .step-body p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+  <!-- SLIDE 1: TITLE -->
+  <div class="slide slide-title active" id="s1">
+    <div class="badge">TERRAFORM · AWS · IaC</div>
+    <h1>AWS 3-Tier Web App<br><span>Infrastructure</span></h1>
+    <p>Modular Terraform provisioning for a production-ready, multi-AZ web application on AWS us-east-1</p>
+    <div class="meta">
+      <div class="meta-item"><div class="val">6</div><div class="lbl">Terraform Modules</div></div>
+      <div class="meta-item"><div class="val">3</div><div class="lbl">Availability Zones</div></div>
+      <div class="meta-item"><div class="val">9</div><div class="lbl">Subnets</div></div>
+      <div class="meta-item"><div class="val">3</div><div class="lbl">Tiers</div></div>
+    </div>
+  </div>
+
+  <!-- SLIDE 2: ARCHITECTURE -->
+  <div class="slide" id="s2">
+    <div class="slide-header">
+      <h2>Architecture <span>Overview</span></h2>
+      <p>Traffic flow from internet through WAF → ALB → App EC2s → Aurora PostgreSQL</p>
+    </div>
+    <div class="arch-wrap">
+      <div class="tier internet">
+        <div class="tier-label">Internet</div>
+        <div class="tier-boxes">
+          <div class="box"><div class="icon">🌐</div><div class="name">Users</div><div class="sub">HTTP/HTTPS</div></div>
+          <div class="box"><div class="icon">🛡️</div><div class="name">WAF v2</div><div class="sub">Managed rules + rate limit</div></div>
+        </div>
+      </div>
+      <div class="arrow">↓ &nbsp; Internet Gateway</div>
+      <div class="tier public">
+        <div class="tier-label">Public Subnets ×3 AZ</div>
+        <div class="tier-boxes">
+          <div class="box"><div class="icon">⚖️</div><div class="name">App Load Balancer</div><div class="sub">dev-client-alb</div></div>
+          <div class="box"><div class="icon">🔀</div><div class="name">NAT Gateway</div><div class="sub">Outbound for app tier</div></div>
+          <div class="box"><div class="icon">🌐</div><div class="name">Internet Gateway</div><div class="sub">dev-client-igw</div></div>
+        </div>
+      </div>
+      <div class="arrow">↓ &nbsp; ALB-SG → App-SG (port 80/443/8080 only)</div>
+      <div class="tier app">
+        <div class="tier-label">App Subnets ×3 AZ</div>
+        <div class="tier-boxes">
+          <div class="box"><div class="icon">🖥️</div><div class="name">EC2 app-1</div><div class="sub">us-east-1a</div></div>
+          <div class="box"><div class="icon">🖥️</div><div class="name">EC2 app-2</div><div class="sub">us-east-1b</div></div>
+          <div class="box"><div class="icon">🖥️</div><div class="name">EC2 app-3</div><div class="sub">us-east-1c</div></div>
+        </div>
+      </div>
+      <div class="arrow">↓ &nbsp; App-SG → DB-SG (port 5432 only) · No internet route</div>
+      <div class="tier db">
+        <div class="tier-label">DB Subnets ×3 AZ</div>
+        <div class="tier-boxes">
+          <div class="box"><div class="icon">🗄️</div><div class="name">Aurora Writer</div><div class="sub">PostgreSQL 15</div></div>
+          <div class="box"><div class="icon">🗄️</div><div class="name">Aurora Reader</div><div class="sub">Multi-AZ replica</div></div>
+          <div class="box"><div class="icon">🔒</div><div class="name">Isolated RT</div><div class="sub">No default route</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 3: MODULES -->
+  <div class="slide" id="s3">
+    <div class="slide-header">
+      <h2>Terraform <span>Module Structure</span></h2>
+      <p>Each module is self-contained with variables.tf, main.tf, and outputs.tf</p>
+    </div>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon">🌐</div>
+        <div class="card-title">vpc</div>
+        <div class="card-sub">VPC, 9 subnets, IGW, NAT Gateway, 3 route tables with least-privilege routing</div>
+        <div class="card-detail"><span class="pill blue">10.0.0.0/16</span></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔒</div>
+        <div class="card-title">security_groups</div>
+        <div class="card-sub">ALB-SG, App-SG, DB-SG. Each references the upstream SG — no CIDR-based rules</div>
+        <div class="card-detail"><span class="pill green">Least privilege</span></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚖️</div>
+        <div class="card-title">alb</div>
+        <div class="card-sub">Internet-facing ALB, target group with health checks, HTTP→HTTPS redirect when cert provided</div>
+        <div class="card-detail"><span class="pill orange">TLS 1.3</span></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🛡️</div>
+        <div class="card-title">waf</div>
+        <div class="card-sub">WAFv2 regional ACL with 3 AWS managed rule sets + rate limit. CloudWatch logs retained 30 days</div>
+        <div class="card-detail"><span class="pill red">Rate: 2000/5m</span></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🖥️</div>
+        <div class="card-title">ec2</div>
+        <div class="card-sub">3 app instances (1/AZ), IMDSv2 enforced, SSM agent, IAM instance profile, gp3 encrypted EBS</div>
+        <div class="card-detail"><span class="pill purple">t3.medium</span></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🗄️</div>
+        <div class="card-title">rds</div>
+        <div class="card-sub">Aurora PostgreSQL 15 cluster, writer + reader, storage encrypted, Performance Insights, final snapshot</div>
+        <div class="card-detail"><span class="pill blue">Multi-AZ</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 4: NETWORK -->
+  <div class="slide" id="s4">
+    <div class="slide-header">
+      <h2>Network <span>Design</span></h2>
+      <p>VPC CIDR 10.0.0.0/16 · us-east-1a/b/c · Isolated DB routing</p>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h3>🗺️ Subnet Layout</h3>
+        <table>
+          <thead><tr><th>Subnet</th><th>CIDR</th><th>AZ</th><th>Tier</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">public-1</td><td class="mono">10.0.0.0/24</td><td>1a</td><td><span class="pill green">Public</span></td></tr>
+            <tr><td class="mono">public-2</td><td class="mono">10.0.1.0/24</td><td>1b</td><td><span class="pill green">Public</span></td></tr>
+            <tr><td class="mono">public-3</td><td class="mono">10.0.2.0/24</td><td>1c</td><td><span class="pill green">Public</span></td></tr>
+            <tr><td class="mono">app-1</td><td class="mono">10.0.10.0/24</td><td>1a</td><td><span class="pill purple">App</span></td></tr>
+            <tr><td class="mono">app-2</td><td class="mono">10.0.11.0/24</td><td>1b</td><td><span class="pill purple">App</span></td></tr>
+            <tr><td class="mono">app-3</td><td class="mono">10.0.12.0/24</td><td>1c</td><td><span class="pill purple">App</span></td></tr>
+            <tr><td class="mono">db-1</td><td class="mono">10.0.20.0/24</td><td>1a</td><td><span class="pill red">DB</span></td></tr>
+            <tr><td class="mono">db-2</td><td class="mono">10.0.21.0/24</td><td>1b</td><td><span class="pill red">DB</span></td></tr>
+            <tr><td class="mono">db-3</td><td class="mono">10.0.22.0/24</td><td>1c</td><td><span class="pill red">DB</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>🛣️ Route Tables</h3>
+        <table>
+          <thead><tr><th>Route Table</th><th>Default Route</th><th>Used By</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">public-rt</td><td><span style="color:var(--green)">→ IGW</span></td><td>3 public subnets</td></tr>
+            <tr><td class="mono">private-rt</td><td><span style="color:var(--orange)">→ NAT GW</span></td><td>3 app subnets</td></tr>
+            <tr><td class="mono">db-rt</td><td><span style="color:var(--red)">None</span></td><td>3 DB subnets</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top: 20px;">
+          <h3 style="margin-bottom:12px;">🔑 Key Design Decisions</h3>
+          <div style="font-size:12px; color:var(--muted); line-height:1.8;">
+            <div>• DB subnets have <strong style="color:var(--text)">no default route</strong> — zero internet exposure</div>
+            <div>• Single NAT GW in AZ-1 (cost-optimised for dev)</div>
+            <div>• ALB spans all 3 public subnets for HA</div>
+            <div>• Each app EC2 in its own AZ for fault isolation</div>
+            <div>• DNS hostnames + DNS support enabled on VPC</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 5: SECURITY GROUPS -->
+  <div class="slide" id="s5">
+    <div class="slide-header">
+      <h2>Security <span>Groups</span></h2>
+      <p>SG-to-SG references — no CIDR-based rules between tiers</p>
+    </div>
+    <div style="flex:1; display:flex; flex-direction:column; gap:12px; overflow:hidden;">
+      <div class="panel" style="flex:1;">
+        <h3>🌐 ALB Security Group &nbsp;<span class="pill green">dev-client-alb-sg</span></h3>
+        <div class="sg-rule"><span class="sg-port">:80</span><span class="sg-arrow">←</span><span class="sg-from">0.0.0.0/0</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+        <div class="sg-rule"><span class="sg-port">:443</span><span class="sg-arrow">←</span><span class="sg-from">0.0.0.0/0</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+        <div class="sg-rule"><span class="sg-port">ALL</span><span class="sg-arrow">→</span><span class="sg-from">0.0.0.0/0 (egress)</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+      </div>
+      <div class="panel" style="flex:1;">
+        <h3>🖥️ App Security Group &nbsp;<span class="pill purple">dev-client-app-sg</span></h3>
+        <div class="sg-rule"><span class="sg-port">:80</span><span class="sg-arrow">←</span><span class="sg-from">ALB-SG only</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+        <div class="sg-rule"><span class="sg-port">:443</span><span class="sg-arrow">←</span><span class="sg-from">ALB-SG only</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+        <div class="sg-rule"><span class="sg-port">:8080</span><span class="sg-arrow">←</span><span class="sg-from">ALB-SG only</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+        <div class="sg-rule"><span class="sg-port">ALL</span><span class="sg-arrow">→</span><span class="sg-from">0.0.0.0/0 (for NAT outbound)</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+      </div>
+      <div class="panel" style="flex:1;">
+        <h3>🗄️ DB Security Group &nbsp;<span class="pill red">dev-client-db-sg</span></h3>
+        <div class="sg-rule"><span class="sg-port">:5432</span><span class="sg-arrow">←</span><span class="sg-from">App-SG only</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+        <div class="sg-rule"><span class="sg-port">ALL</span><span class="sg-arrow">←</span><span class="sg-from">0.0.0.0/0</span><span style="color:var(--red);margin-left:auto;font-size:12px;">DENY (implicit)</span></div>
+        <div class="sg-rule"><span class="sg-port">ALL</span><span class="sg-arrow">→</span><span class="sg-from">App-SG only (egress)</span><span style="color:var(--green);margin-left:auto;font-size:12px;">ALLOW</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 6: WAF -->
+  <div class="slide" id="s6">
+    <div class="slide-header">
+      <h2>WAF <span>Configuration</span></h2>
+      <p>WAFv2 Regional Web ACL attached to ALB · CloudWatch logging enabled</p>
+    </div>
+    <div class="two-col" style="flex:1;">
+      <div class="panel">
+        <h3>📋 Managed Rules (Priority Order)</h3>
+        <table>
+          <thead><tr><th>#</th><th>Rule Set</th><th>Protects Against</th></tr></thead>
+          <tbody>
+            <tr><td><span class="pill blue">1</span></td><td>AWSManagedRulesCommonRuleSet</td><td>OWASP Top 10</td></tr>
+            <tr><td><span class="pill blue">2</span></td><td>AWSManagedRulesKnownBadInputsRuleSet</td><td>Log4Shell, SSRF, bad payloads</td></tr>
+            <tr><td><span class="pill blue">3</span></td><td>AWSManagedRulesSQLiRuleSet</td><td>SQL injection</td></tr>
+            <tr><td><span class="pill red">4</span></td><td>RateLimitRule (custom)</td><td>DDoS / brute force</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:16px; font-size:12px; color:var(--muted);">
+          Default action: <span style="color:var(--green);">ALLOW</span> (rules block matching traffic)<br>
+          Rate limit: <strong style="color:var(--text)">2,000 requests / 5 min per IP</strong>
+        </div>
+      </div>
+      <div class="panel" style="display:flex;flex-direction:column;gap:14px;">
+        <h3>📊 Observability</h3>
+        <div style="font-size:12px; line-height:1.8; color:var(--muted);">
+          <div>• CloudWatch Log Group: <span class="mono">aws-waf-logs-{prefix}</span></div>
+          <div>• Retention: <strong style="color:var(--text)">30 days</strong></div>
+          <div>• Sampled requests enabled on all rules</div>
+          <div>• CloudWatch metrics per rule for alerting</div>
+        </div>
+        <h3>🔗 Association</h3>
+        <div style="font-size:12px; line-height:1.8; color:var(--muted);">
+          <div>• <span class="mono">aws_wafv2_web_acl_association</span> binds ACL to ALB ARN</div>
+          <div>• Scope: <strong style="color:var(--text)">REGIONAL</strong> (not CloudFront)</div>
+          <div>• All rules set to <span class="pill orange">override_action: none</span></div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--muted);">
+          💡 To add IP allowlisting (corporate CIDR), add a priority 0 rule with <span style="color:var(--accent);">action: allow</span> before the managed sets.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 7: SECURITY HARDENING -->
+  <div class="slide" id="s7">
+    <div class="slide-header">
+      <h2>Security <span>Hardening</span></h2>
+      <p>Defence-in-depth across compute, network, data, and access layers</p>
+    </div>
+    <div class="sec-grid">
+      <div class="sec-panel">
+        <h3>🖥️ Compute (EC2)</h3>
+        <div class="sec-item">IMDSv2 enforced (<span class="mono">http_tokens = required</span>)</div>
+        <div class="sec-item">EBS root volumes encrypted (gp3)</div>
+        <div class="sec-item">SSM Session Manager — no SSH port open</div>
+        <div class="sec-item">IAM instance profile with least-privilege SSM policy</div>
+        <div class="sec-item">No public IP assigned to app instances</div>
+      </div>
+      <div class="sec-panel">
+        <h3>🗄️ Database (Aurora)</h3>
+        <div class="sec-item">Storage encryption enabled at cluster level</div>
+        <div class="sec-item"><span class="mono">publicly_accessible = false</span> on all instances</div>
+        <div class="sec-item">DB subnets have no internet route table entry</div>
+        <div class="sec-item">Automated backups 7-day retention</div>
+        <div class="sec-item">Final snapshot on destroy</div>
+        <div class="sec-item">PostgreSQL logs exported to CloudWatch</div>
+      </div>
+      <div class="sec-panel">
+        <h3>🌐 Network</h3>
+        <div class="sec-item">SG-to-SG references — no CIDR between tiers</div>
+        <div class="sec-item">DB tier isolated route table (no default route)</div>
+        <div class="sec-item">HTTPS redirect when ACM cert provided</div>
+        <div class="sec-item">TLS 1.3 policy on HTTPS listener</div>
+        <div class="sec-item">WAF SQLi + OWASP rules before ALB</div>
+      </div>
+      <div class="sec-panel">
+        <h3>🔑 Secrets &amp; IaC</h3>
+        <div class="sec-item"><span class="mono">terraform.tfvars</span> in <span class="mono">.gitignore</span></div>
+        <div class="sec-item">Password variable marked <span class="mono">sensitive = true</span></div>
+        <div class="sec-item">All tags via provider <span class="mono">default_tags</span></div>
+        <div class="sec-item">No hardcoded credentials anywhere in code</div>
+        <div class="sec-item">Production: use AWS Secrets Manager for DB password</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 8: OUTPUTS -->
+  <div class="slide" id="s8">
+    <div class="slide-header">
+      <h2>Terraform <span>Outputs</span></h2>
+      <p>Resource names after <span class="mono">terraform apply</span> with environment=dev, client=acmecorp</p>
+    </div>
+    <div class="output-grid">
+      <div class="output-card">
+        <h4>🌐 Network</h4>
+        <div class="output-row"><span class="output-key">vpc_name</span><span class="output-val">dev-acmecorp-vpc</span></div>
+        <div class="output-row"><span class="output-key">internet_gateway_name</span><span class="output-val">dev-acmecorp-igw</span></div>
+        <div class="output-row"><span class="output-key">nat_gateway_name</span><span class="output-val">dev-acmecorp-nat-gw</span></div>
+      </div>
+      <div class="output-card">
+        <h4>⚖️ Load Balancer + WAF</h4>
+        <div class="output-row"><span class="output-key">alb_name</span><span class="output-val">dev-acmecorp-alb</span></div>
+        <div class="output-row"><span class="output-key">alb_dns_name</span><span class="output-val">dev-acmecorp-alb-xxx.us-east-1.elb...</span></div>
+        <div class="output-row"><span class="output-key">waf_web_acl_name</span><span class="output-val">dev-acmecorp-waf-acl</span></div>
+      </div>
+      <div class="output-card">
+        <h4>🖥️ EC2 Instances</h4>
+        <div class="output-row"><span class="output-key">app-1 (us-east-1a)</span><span class="output-val">dev-acmecorp-app-ec2-1</span></div>
+        <div class="output-row"><span class="output-key">app-2 (us-east-1b)</span><span class="output-val">dev-acmecorp-app-ec2-2</span></div>
+        <div class="output-row"><span class="output-key">app-3 (us-east-1c)</span><span class="output-val">dev-acmecorp-app-ec2-3</span></div>
+      </div>
+      <div class="output-card">
+        <h4>🗄️ Aurora RDS</h4>
+        <div class="output-row"><span class="output-key">cluster_identifier</span><span class="output-val">dev-acmecorp-aurora-cluster</span></div>
+        <div class="output-row"><span class="output-key">writer instance</span><span class="output-val">dev-acmecorp-aurora-writer</span></div>
+        <div class="output-row"><span class="output-key">reader instance</span><span class="output-val">dev-acmecorp-aurora-reader</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 9: DEPLOY -->
+  <div class="slide" id="s9">
+    <div class="slide-header">
+      <h2>Deployment <span>Steps</span></h2>
+      <p>From zero to provisioned infrastructure in 4 commands</p>
+    </div>
+    <div class="deploy-wrap">
+      <div class="step-list" style="justify-content:center;">
+        <div class="step"><div class="step-num">1</div><div class="step-body"><h4>Configure variables</h4><p>Copy <span class="mono">terraform.tfvars.example</span> → <span class="mono">terraform.tfvars</span> and set <span class="mono">client_name</span>, <span class="mono">ec2_ami</span>, <span class="mono">db_master_password</span></p></div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body"><h4>terraform init</h4><p>Downloads AWS provider ~> 5.40, initialises all 6 child modules</p></div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-body"><h4>terraform plan -out=tfplan</h4><p>Review ~45 resources across VPC, SGs, ALB, WAF, EC2, RDS. Verify naming + tags before apply</p></div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-body"><h4>terraform apply tfplan</h4><p>~8–12 min. Aurora cluster takes the longest. Outputs print on completion</p></div></div>
+        <div class="step"><div class="step-num">5</div><div class="step-body"><h4>Destroy (cleanup)</h4><p><span class="mono">terraform destroy</span> — final RDS snapshot is taken automatically before deletion</p></div></div>
+      </div>
+      <div class="panel" style="display:flex;flex-direction:column;gap:10px;">
+        <h3>📁 Project Structure</h3>
+        <div style="font-family:monospace;font-size:12px;line-height:1.9;color:var(--muted);">
+          <div style="color:var(--text);">aws-webapp-dev/</div>
+          <div>├── <span style="color:var(--accent);">versions.tf</span></div>
+          <div>├── <span style="color:var(--accent);">variables.tf</span></div>
+          <div>├── <span style="color:var(--accent);">main.tf</span></div>
+          <div>├── <span style="color:var(--accent);">outputs.tf</span></div>
+          <div>├── <span style="color:var(--orange);">terraform.tfvars.example</span></div>
+          <div>├── <span style="color:var(--green);">CLAUDE.md</span></div>
+          <div>├── .gitignore</div>
+          <div>└── modules/</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;├── <span style="color:var(--accent2);">vpc/</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;├── <span style="color:var(--accent2);">security_groups/</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;├── <span style="color:var(--accent2);">alb/</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;├── <span style="color:var(--accent2);">waf/</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;├── <span style="color:var(--accent2);">ec2/</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;└── <span style="color:var(--accent2);">rds/</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- NAV -->
+<div class="nav">
+  <button onclick="go(-1)">&#8592;</button>
+  <div class="dots" id="dots"></div>
+  <span class="counter" id="counter">1 / 9</span>
+  <button onclick="go(1)">&#8594;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let cur = 0;
+  const dotsEl = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+
+  for (let i = 0; i < total; i++) {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' active' : '');
+    d.onclick = () => goTo(i);
+    dotsEl.appendChild(d);
+  }
+
+  function goTo(n) {
+    slides[cur].classList.remove('active');
+    dotsEl.children[cur].classList.remove('active');
+    cur = (n + total) % total;
+    slides[cur].classList.add('active');
+    dotsEl.children[cur].classList.add('active');
+    counter.textContent = `${cur + 1} / ${total}`;
+  }
+
+  function go(d) { goTo(cur + d); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') go(1);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') go(-1);
+  });
+</script>
+</body>
+</html>

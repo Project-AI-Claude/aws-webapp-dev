@@ -1,0 +1,19 @@
+aws_region  = "us-east-1"
+environment = "dev"
+client_name = "acmecorp"
+
+vpc_cidr            = "10.0.0.0/16"
+public_subnet_cidrs = ["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"]
+app_subnet_cidrs    = ["10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24"]
+db_subnet_cidrs     = ["10.0.20.0/24", "10.0.21.0/24", "10.0.22.0/24"]
+availability_zones  = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+ec2_ami           = "ami-0c55b159cbfafe1f0"   # Amazon Linux 2 us-east-1 — replace with current AMI
+ec2_instance_type = "t3.medium"
+ec2_key_name      = null                       # Set to your key pair name for SSH
+
+db_master_username = "dbadmin"
+db_master_password = "REPLACE_WITH_STRONG_PASSWORD"  # Use aws_secretsmanager_secret in production
+db_instance_class  = "db.r6g.large"
+
+alb_certificate_arn = null  # Set ACM ARN to enable HTTPS
