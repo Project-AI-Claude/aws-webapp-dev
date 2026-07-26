@@ -1,4 +1,4 @@
-# AWS 3-Tier Web App — Terraform
+# AWS 3-Tier Web App - Terraform
 
 > Modular, production-ready Infrastructure-as-Code for a secure, multi-AZ 3-tier web application on AWS (`us-east-1`), built with Terraform and Claude Code.
 
